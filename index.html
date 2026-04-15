@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>图片文字排版合成工具</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <style>
+    .item-card {
+      @apply relative bg-white rounded-lg shadow-md p-3 mb-3 cursor-move border border-gray-200 transition-all hover:shadow-lg;
+      width: 800px !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+    }
+    .delete-btn {
+      @apply absolute top-2 right-2 w-6 h-6 flex items-center justify-center bg-red-500 text-white rounded-full hover:bg-red-600 cursor-pointer z-10;
+    }
+    #preview-area {
+      min-height: 300px;
+      width: 100%;
+      @apply bg-white border-2 border-dashed border-gray-300 rounded-lg p-5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .hide-in-export { display: none !important; }
+    .text-toolbar {
+      @apply flex items-center gap-2 mb-2 flex-wrap;
+    }
+    .text-toolbar button {
+      @apply px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm;
+    }
+    .text-toolbar select {
+      @apply px-2 py-1 border rounded text-sm;
+    }
+    .auto-text {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 8px 10px;
+      width: 100%;
+      min-height: 60px;
+      outline: none;
+      font-size: 15px;
+      line-height: 1.6;
+      resize: none;
+      overflow: hidden;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .export-text { border: none !important; padding: 8px 0px !important; }
+    .item-body img {
+      display: block; margin: 0 auto; max-width: 100%; height: auto;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-8">
+  <div class="max-w-6xl mx-auto">
+    <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">图片文字排版合成工具</h1>
+    <div class="flex flex-wrap gap-3 mb-6 justify-center">
+      <button id="upload-img" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg shadow">
+        <i class="fa fa-image mr-1"></i> 上传图片
+      </button>
+      <button id="add-text" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg shadow">
+        <i class="fa fa-font mr-1"></i> 添加文字
+      </button>
+      <button id="export-img" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg shadow">
+        <i class="fa fa-download mr-1"></i> 生成并下载
+      </button>
+      <button id="clear-all" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg shadow">
+        <i class="fa fa-trash mr-1"></i> 清空全部
+      </button>
+    </div>
+    <input type="file" id="image-input" accept="image/*" multiple class="hidden">
+    <div class="mb-8">
+      <h2 class="text-xl font-semibold text-gray-700 mb-3">编辑预览区（拖拽排序）</h2>
+      <div id="preview-area"></div>
+    </div>
+    <div id="result-section" class="hidden">
+      <h2 class="text-xl font-semibold text-gray-700 mb-3">合成结果</h2>
+      <div class="border border-gray-300 rounded-lg overflow-hidden bg-white p-2">
+        <img id="result-img" class="max-w-full h-auto mx-auto">
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const previewArea = document.getElementById('preview-area');
+    const imageInput = document.getElementById('image-input');
+    const uploadImgBtn = document.getElementById('upload-img');
+    const addTextBtn = document.getElementById('add-text');
+    const exportBtn = document.getElementById('export-img');
+    const clearBtn = document.getElementById('clear-all');
+    const resultSection = document.getElementById('result-section');
+    const resultImg = document.getElementById('result-img');
+
+    const sortable = new Sortable(previewArea, {
+      animation: 180,
+      ghostClass: 'bg-blue-50',
+      draggable: '.item-card'
+    });
+
+    // 上传图片
+    uploadImgBtn.onclick = () => imageInput.click();
+    imageInput.addEventListener('change', (e) => {
+      const files = e.target.files;
+      if (!files.length) return;
+      for (let file of files) {
+        if (!file.type.startsWith('image/')) continue;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.src = ev.target.result;
+          img.onload = () => {
+            const card = createItemCard();
+            const imgEl = document.createElement('img');
+            imgEl.src = img.src;
+            if (img.width > 800) imgEl.style.width = "800px";
+            card.querySelector('.item-body').appendChild(imgEl);
+            previewArea.appendChild(card);
+          };
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // 添加文字（带工具栏：字体大小、对齐方式）
+    addTextBtn.addEventListener('click', () => {
+      const card = createItemCard();
+      const toolbar = document.createElement('div');
+      toolbar.className = 'text-toolbar';
+      
+      const sizeSelect = document.createElement('select');
+      const sizes = [12,14,15,16,18,20,24,28,32,36];
+      sizes.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s + 'px';
+        if(s==16) opt.selected = true;
+        sizeSelect.appendChild(opt);
+      });
+
+      const btnLeft = document.createElement('button');
+      btnLeft.innerHTML = '<i class="fa fa-align-left"></i>';
+      const btnCenter = document.createElement('button');
+      btnCenter.innerHTML = '<i class="fa fa-align-center"></i>';
+      const btnRight = document.createElement('button');
+      btnRight.innerHTML = '<i class="fa fa-align-right"></i>';
+
+      toolbar.append(sizeSelect, btnLeft, btnCenter, btnRight);
+
+      const textDiv = document.createElement('div');
+      textDiv.className = 'auto-text';
+      textDiv.contentEditable = true;
+      textDiv.innerText = '请输入文字内容...';
+      textDiv.style.textAlign = 'left';
+      textDiv.style.fontSize = '16px';
+
+      // 绑定事件
+      sizeSelect.onchange = () => { textDiv.style.fontSize = sizeSelect.value + 'px'; };
+      btnLeft.onclick = () => { textDiv.style.textAlign = 'left'; };
+      btnCenter.onclick = () => { textDiv.style.textAlign = 'center'; };
+      btnRight.onclick = () => { textDiv.style.textAlign = 'right'; };
+
+      card.querySelector('.item-body').append(toolbar, textDiv);
+      previewArea.appendChild(card);
+    });
+
+    // 创建卡片
+    function createItemCard() {
+      const card = document.createElement('div');
+      card.className = 'item-card';
+      const delBtn = document.createElement('div');
+      delBtn.className = 'delete-btn';
+      delBtn.innerHTML = '<i class="fa fa-times"></i>';
+      delBtn.onclick = () => card.remove();
+      const body = document.createElement('div');
+      body.className = 'item-body w-full';
+      card.appendChild(delBtn);
+      card.appendChild(body);
+      return card;
+    }
+
+    // 导出图片（隐藏工具栏、删除按钮、无边框）
+    // ========== 重点修改：控制图片大小在 500KB ~ 3MB ==========
+    exportBtn.addEventListener('click', async () => {
+      if (!previewArea.children.length) {
+        alert('请先添加内容');
+        return;
+      }
+      try {
+        const delBtns = document.querySelectorAll('.delete-btn');
+        const toolbars = document.querySelectorAll('.text-toolbar');
+        const texts = document.querySelectorAll('.auto-text');
+        
+        delBtns.forEach(b => b.classList.add('hide-in-export'));
+        toolbars.forEach(t => t.classList.add('hide-in-export'));
+        texts.forEach(t => t.classList.add('export-text'));
+
+        // 生成画布（降低清晰度防止过大）
+        const canvas = await html2canvas(previewArea, {
+          useCORS: true, 
+          scale: 1.5,        // 从 2 降到 1.5，控制大小
+          backgroundColor:'#ffffff'
+        });
+
+        // 恢复显示
+        delBtns.forEach(b => b.classList.remove('hide-in-export'));
+        toolbars.forEach(t => t.classList.remove('hide-in-export'));
+        texts.forEach(t => t.classList.remove('export-text'));
+
+        // ========== 核心：自动压缩到 500KB - 3MB 之间 ==========
+        let quality = 0.9;
+        let dataUrl;
+        const maxSize = 3 * 1024 * 1024; // 3MB
+        const minSize = 500 * 1024;      // 500KB
+
+        while (true) {
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+          const size = dataUrl.length * 0.75;
+
+          if (size <= maxSize && size >= minSize) break;
+          if (size > maxSize) quality -= 0.05;
+          if (size < minSize) { quality += 0.02; break; }
+          if (quality < 0.3) break;
+        }
+
+        resultImg.src = dataUrl;
+        resultSection.classList.remove('hidden');
+        
+        // 下载
+        const a = document.createElement('a');
+        a.download = '合成图片_'+Date.now()+'.jpg';
+        a.href = dataUrl;
+        a.click();
+      } catch (e) {
+        alert('生成失败');
+        console.error(e);
+      }
+    });
+    // ======================================================
+
+    // 清空
+    clearBtn.addEventListener('click', () => {
+      if(confirm('确定清空？')){
+        previewArea.innerHTML = '';
+        resultSection.classList.add('hidden');
+        imageInput.value = '';
+      }
+    });
+  </script>
+</html>
